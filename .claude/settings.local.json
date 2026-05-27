@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git --version)",
+      "Bash(gh --version)",
+      "Bash(where git *)",
+      "Bash(where gh *)",
+      "Bash(winget install *)"
+    ]
+  }
+}
