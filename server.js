@@ -291,6 +291,73 @@ app.post('/api/auth/resend-confirm', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Forgot password ───────────────────────────────
+async function sendResetEmail(user, token) {
+  if (!transporter) throw new Error('Email not configured in .env');
+  const link = `${APP_URL}/?reset=${token}`;
+  await transporter.sendMail({
+    from: `"Dallas Gangs On Diet 🤠" <${process.env.EMAIL_USER}>`,
+    to:   user.email,
+    subject: 'Reset your password — Dallas Gangs On Diet',
+    html: `
+<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#F2EBE0;font-family:-apple-system,Arial,sans-serif">
+  <div style="max-width:480px;margin:40px auto;background:#FFFDF8;border-radius:20px;padding:40px 36px;text-align:center;box-shadow:0 4px 24px rgba(44,24,16,0.10)">
+    <div style="font-size:56px;margin-bottom:12px">🔑</div>
+    <h2 style="color:#2C1810;font-size:22px;font-weight:900;margin:0 0 10px">Reset your password</h2>
+    <p style="color:#8B7355;font-size:15px;line-height:1.7;margin:0 0 28px">
+      Hi <strong>${user.username}</strong>, we received a request to reset your password.<br>
+      Click the button below — the link expires in <strong>1 hour</strong>.
+    </p>
+    <a href="${link}" style="display:inline-block;background:#C4714A;color:white;padding:14px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:800;letter-spacing:0.2px">
+      Reset Password →
+    </a>
+    <p style="color:#B8A593;font-size:12px;margin:24px 0 0;line-height:1.6">
+      If you didn't request this, you can safely ignore this email.<br>
+      Your password will not change until you click the link above.
+    </p>
+  </div>
+</body></html>`
+  });
+}
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const users = readUsers();
+    const idx   = users.findIndex(u => u.email.toLowerCase() === email?.toLowerCase()?.trim());
+    // Always return the same message to prevent email enumeration
+    const ok = { message: 'If that email is registered, a reset link has been sent. Check your inbox (and spam folder).' };
+    if (idx === -1) return res.json(ok);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    users[idx].resetToken  = token;
+    users[idx].resetExpiry = Date.now() + 3_600_000; // 1 hour
+    writeUsers(users);
+    await sendResetEmail(users[idx], token);
+    res.json(ok);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword || newPassword.length < 6)
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+
+    const users = readUsers();
+    const idx   = users.findIndex(u => u.resetToken === token && u.resetExpiry > Date.now());
+    if (idx === -1)
+      return res.status(400).json({ error: 'This reset link has expired or is invalid. Please request a new one.' });
+
+    users[idx].passwordHash = await bcrypt.hash(newPassword, 10);
+    users[idx].resetToken   = null;
+    users[idx].resetExpiry  = null;
+    writeUsers(users);
+    res.json({ message: 'Password updated successfully. You can now log in.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Login ─────────────────────────────────────────
 app.post('/api/auth/login', async (req, res) => {
   try {

@@ -39,6 +39,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .btn-accent:active{background:var(--accent-d);transform:scale(0.98)}
 .btn-accent:disabled{opacity:.6;cursor:not-allowed}
 .auth-divider{font-size:13px;color:var(--text3);margin:4px 0}
+.auth-link-btn{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:6px 0 2px;text-decoration:underline;text-underline-offset:2px;align-self:center}
+.auth-link-btn:hover{color:var(--accent-d)}
+.auth-back-btn{background:none;border:none;color:var(--text2);font-size:13px;cursor:pointer;padding:8px 0;margin-top:2px;display:inline-flex;align-items:center;gap:4px}
+.auth-info-box{font-size:14px;color:var(--text2);line-height:1.65;text-align:left;background:var(--card2);border-radius:10px;padding:12px 14px}
 
 /* ── MAIN APP ─────────────────────────────────── */
 #main-app{display:flex;flex-direction:column;height:100dvh;max-width:480px;margin:0 auto;background:var(--bg)}
@@ -272,6 +276,25 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
       <input class="auth-input" type="password" id="li-pass" placeholder="Password" autocomplete="current-password"/>
       <div class="auth-error" id="li-err"></div>
       <button class="btn-accent" id="li-btn" onclick="doLogin()">Login</button>
+      <button type="button" class="auth-link-btn" onclick="showForgotForm()">Forgot password?</button>
+    </div>
+
+    <!-- ── Forgot password panel ── -->
+    <div id="auth-forgot-form" class="auth-form" style="display:none">
+      <p class="auth-info-box">Enter your email address and we'll send you a link to reset your password.</p>
+      <input class="auth-input" type="email" id="fp-email" placeholder="Your email address" autocomplete="email"/>
+      <div class="auth-error" id="fp-err"></div>
+      <button class="btn-accent" id="fp-btn" onclick="doForgotPassword()">Send Reset Link</button>
+      <button type="button" class="auth-back-btn" onclick="showAuthTab('login')">← Back to Login</button>
+    </div>
+
+    <!-- ── Reset password panel (reached via email link ?reset=TOKEN) ── -->
+    <div id="auth-reset-form" class="auth-form" style="display:none">
+      <p class="auth-info-box">Choose a strong new password for your account.</p>
+      <input class="auth-input" type="password" id="rp-pass"  placeholder="New password (min 6 chars)" autocomplete="new-password"/>
+      <input class="auth-input" type="password" id="rp-pass2" placeholder="Confirm new password"       autocomplete="new-password"/>
+      <div class="auth-error" id="rp-err"></div>
+      <button class="btn-accent" id="rp-btn" onclick="doResetPassword()">Set New Password</button>
     </div>
 
     <div id="auth-register-form" class="auth-form" style="display:none">
@@ -690,6 +713,8 @@ function showAuthTab(tab) {
   document.querySelectorAll('.auth-tab').forEach((b,i) => b.classList.toggle('active', (i===0 && tab==='login') || (i===1 && tab==='register')));
   document.getElementById('auth-login-form').style.display    = tab === 'login'    ? 'flex' : 'none';
   document.getElementById('auth-register-form').style.display = tab === 'register' ? 'flex' : 'none';
+  document.getElementById('auth-forgot-form').style.display   = 'none';
+  document.getElementById('auth-reset-form').style.display    = 'none';
   document.getElementById('auth-pending').style.display       = 'none';
   document.querySelector('.auth-tabs').style.display          = 'flex';
   document.getElementById('auth-logo').style.display          = 'block';
@@ -749,12 +774,94 @@ async function doRegister() {
 function showPendingScreen(msg) {
   document.getElementById('auth-login-form').style.display    = 'none';
   document.getElementById('auth-register-form').style.display = 'none';
+  document.getElementById('auth-forgot-form').style.display   = 'none';
+  document.getElementById('auth-reset-form').style.display    = 'none';
   document.querySelector('.auth-tabs').style.display          = 'none';
   document.getElementById('auth-logo').style.display          = 'none';
   document.getElementById('auth-title').style.display         = 'none';
   document.getElementById('auth-sub').style.display           = 'none';
   document.getElementById('pending-msg').textContent          = msg;
   document.getElementById('auth-pending').style.display       = 'block';
+}
+
+// ── Forgot / Reset password ────────────────────────
+let _resetToken = null;
+
+function showForgotForm() {
+  document.getElementById('auth-login-form').style.display    = 'none';
+  document.getElementById('auth-register-form').style.display = 'none';
+  document.getElementById('auth-forgot-form').style.display   = 'flex';
+  document.getElementById('auth-reset-form').style.display    = 'none';
+  document.getElementById('auth-pending').style.display       = 'none';
+  document.querySelector('.auth-tabs').style.display          = 'none';
+  document.getElementById('auth-logo').style.display          = 'block';
+  document.getElementById('auth-title').style.display         = 'block';
+  document.getElementById('auth-sub').style.display           = 'none';
+  document.getElementById('fp-email').value   = '';
+  document.getElementById('fp-err').textContent = '';
+}
+
+function showResetForm(token) {
+  _resetToken = token;
+  document.getElementById('auth-login-form').style.display    = 'none';
+  document.getElementById('auth-register-form').style.display = 'none';
+  document.getElementById('auth-forgot-form').style.display   = 'none';
+  document.getElementById('auth-reset-form').style.display    = 'flex';
+  document.getElementById('auth-pending').style.display       = 'none';
+  document.querySelector('.auth-tabs').style.display          = 'none';
+  document.getElementById('auth-logo').style.display          = 'block';
+  document.getElementById('auth-title').style.display         = 'block';
+  document.getElementById('auth-sub').textContent             = 'Enter your new password below';
+  document.getElementById('auth-sub').style.display           = 'block';
+  document.getElementById('rp-pass').value   = '';
+  document.getElementById('rp-pass2').value  = '';
+  document.getElementById('rp-err').textContent = '';
+  // Remove the token from the URL bar without reloading
+  window.history.replaceState({}, '', '/');
+}
+
+async function doForgotPassword() {
+  const email = document.getElementById('fp-email').value.trim();
+  const errEl = document.getElementById('fp-err');
+  const btn   = document.getElementById('fp-btn');
+  errEl.textContent = '';
+  if (!email) { errEl.textContent = 'Please enter your email address'; return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await api('POST', '/api/auth/forgot-password', { email });
+    // Show a success screen reusing the pending panel
+    document.getElementById('auth-forgot-form').style.display = 'none';
+    document.getElementById('auth-pending').innerHTML = `
+      <div style="font-size:56px;margin-bottom:16px">📬</div>
+      <h2 style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:10px">Check your inbox!</h2>
+      <p style="font-size:14px;color:var(--text2);line-height:1.7;margin-bottom:20px">
+        If <strong>${email}</strong> is registered, a reset link is on its way.<br>The link expires in <strong>1 hour</strong>.
+      </p>
+      <div style="background:var(--accent-l);border-radius:12px;padding:14px;margin-bottom:20px;font-size:13px;color:var(--accent);line-height:1.6">
+        💡 Don't forget to check your <strong>spam/junk</strong> folder.
+      </div>
+      <button onclick="showAuthTab('login')" class="btn-accent">Back to Login</button>`;
+    document.getElementById('auth-pending').style.display = 'block';
+  } catch(e) { errEl.textContent = e.message; }
+  finally { btn.disabled = false; btn.textContent = 'Send Reset Link'; }
+}
+
+async function doResetPassword() {
+  const pass  = document.getElementById('rp-pass').value;
+  const pass2 = document.getElementById('rp-pass2').value;
+  const errEl = document.getElementById('rp-err');
+  const btn   = document.getElementById('rp-btn');
+  errEl.textContent = '';
+  if (!pass || pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; return; }
+  if (pass !== pass2)           { errEl.textContent = 'Passwords do not match'; return; }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api('POST', '/api/auth/reset-password', { token: _resetToken, newPassword: pass });
+    showToast('✅ Password updated! Please log in.', 5000);
+    _resetToken = null;
+    showAuthTab('login');
+  } catch(e) { errEl.textContent = e.message; }
+  finally { btn.disabled = false; btn.textContent = 'Set New Password'; }
 }
 
 async function resendConfirm() {
@@ -1752,18 +1859,30 @@ function escHtml(s) {
 // ═══════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════
-if (authToken && currentUser) {
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('main-app').style.display    = 'flex';
-  // Refresh user profile from server
-  api('GET', '/api/profile').then(u => {
-    currentUser = u;
-    localStorage.setItem('dgod_user', JSON.stringify(u));
-    initApp();
-  }).catch(() => { logout(); });
-} else {
-  document.getElementById('auth-screen').style.display = 'flex';
-}
+(function boot() {
+  // If the URL contains ?reset=TOKEN (from a password-reset email link),
+  // always show the auth screen with the reset form — regardless of login state.
+  const resetParam = new URLSearchParams(window.location.search).get('reset');
+  if (resetParam) {
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('main-app').style.display    = 'none';
+    showResetForm(resetParam);   // also cleans the URL bar
+    return;
+  }
+
+  if (authToken && currentUser) {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('main-app').style.display    = 'flex';
+    // Refresh user profile from server
+    api('GET', '/api/profile').then(u => {
+      currentUser = u;
+      localStorage.setItem('dgod_user', JSON.stringify(u));
+      initApp();
+    }).catch(() => { logout(); });
+  } else {
+    document.getElementById('auth-screen').style.display = 'flex';
+  }
+}());
 </script>
 </body>
 </html>
