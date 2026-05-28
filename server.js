@@ -14,7 +14,9 @@ const app        = express();
 const PORT       = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dgod-secret-2024';
 const APP_URL    = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
-// Lazy-init so a missing key gives a clear 500 instead of a crash at startup
+const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+// ── Anthropic (lazy init so missing key = clear 500, not crash) ──────────
 let _anthropicClient = null;
 function getClient() {
   if (!_anthropicClient) {
@@ -24,7 +26,6 @@ function getClient() {
   }
   return _anthropicClient;
 }
-const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ── Email transporter ─────────────────────────────
 const emailReady = !!(process.env.EMAIL_USER && process.env.EMAIL_PASS &&
@@ -94,7 +95,6 @@ async function sendConfirmEmail(user, token) {
 // ── Confirmation page HTML helper ─────────────────
 function confirmPage(success, title, message, showLogin = false) {
   const icon  = success ? '✅' : '❌';
-  const color = success ? '#5A8A6A' : '#C4714A';
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -109,61 +109,120 @@ function confirmPage(success, title, message, showLogin = false) {
 </body></html>`;
 }
 
-// ── Data directory ─────────────────────────────────
-// Vercel serverless: filesystem is read-only except /tmp
-const DATA_DIR = process.env.VERCEL ? '/tmp/dgod-data' : path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// ══════════════════════════════════════════════════
+//  STORAGE LAYER
+//  MongoDB when MONGODB_URI is set (Vercel / production)
+//  Local JSON files otherwise (dev — no change needed)
+// ══════════════════════════════════════════════════
+const USE_MONGO = !!process.env.MONGODB_URI;
 
-const readJSON  = (f, d) => { try { return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f,'utf8')) : d; } catch { return d; } };
-const writeJSON = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
+// ── Local file fallback ────────────────────────────
+const DATA_DIR = path.join(__dirname, 'data');
+if (!USE_MONGO && !fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const USERS_FILE  = path.join(DATA_DIR, 'users.json');
-const readUsers   = ()       => readJSON(USERS_FILE, []);
-const writeUsers  = u        => writeJSON(USERS_FILE, u);
-const logsFile    = uid      => path.join(DATA_DIR, `logs_${uid}.json`);
-const burnedFile  = uid      => path.join(DATA_DIR, `burned_${uid}.json`);
-const readLogs    = uid      => readJSON(logsFile(uid), []);
-const writeLogs   = (uid, l) => writeJSON(logsFile(uid), l);
-const readBurned  = uid      => readJSON(burnedFile(uid), {});
-const writeBurned = (uid, d) => writeJSON(burnedFile(uid), d);
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const readJSON   = (f, d) => { try { return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f,'utf8')) : d; } catch { return d; } };
+const writeJSON  = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2), 'utf8');
+
+// ── MongoDB connection (cached across warm invocations) ───────────────────
+let _db = null;
+async function getDb() {
+  if (_db) return _db;
+  const { MongoClient } = require('mongodb');
+  const client = new MongoClient(process.env.MONGODB_URI);
+  await client.connect();
+  _db = client.db('dgod');
+  return _db;
+}
+
+// ── Unified async accessors ────────────────────────
+// Users
+async function readUsers() {
+  if (USE_MONGO) {
+    const db = await getDb();
+    return db.collection('users').find({}, { projection: { _id: 0 } }).toArray();
+  }
+  return readJSON(USERS_FILE, []);
+}
+async function writeUsers(users) {
+  if (USE_MONGO) {
+    if (!users.length) return;
+    const db = await getDb();
+    const ops = users.map(u => ({
+      replaceOne: { filter: { id: u.id }, replacement: u, upsert: true }
+    }));
+    await db.collection('users').bulkWrite(ops);
+  } else {
+    writeJSON(USERS_FILE, users);
+  }
+}
+
+// Logs (per user)
+async function readLogs(uid) {
+  if (USE_MONGO) {
+    const db = await getDb();
+    const doc = await db.collection('logs').findOne({ uid });
+    return doc?.entries || [];
+  }
+  return readJSON(path.join(DATA_DIR, `logs_${uid}.json`), []);
+}
+async function writeLogs(uid, entries) {
+  if (USE_MONGO) {
+    const db = await getDb();
+    await db.collection('logs').replaceOne({ uid }, { uid, entries }, { upsert: true });
+  } else {
+    writeJSON(path.join(DATA_DIR, `logs_${uid}.json`), entries);
+  }
+}
+
+// Burned calories (per user, keyed by date string)
+async function readBurned(uid) {
+  if (USE_MONGO) {
+    const db = await getDb();
+    const doc = await db.collection('burned').findOne({ uid });
+    return doc?.data || {};
+  }
+  return readJSON(path.join(DATA_DIR, `burned_${uid}.json`), {});
+}
+async function writeBurned(uid, data) {
+  if (USE_MONGO) {
+    const db = await getDb();
+    await db.collection('burned').replaceOne({ uid }, { uid, data }, { upsert: true });
+  } else {
+    writeJSON(path.join(DATA_DIR, `burned_${uid}.json`), data);
+  }
+}
 
 // ── TDEE Calculator ────────────────────────────────
 function calculateTargets(profile = {}) {
   const { age, gender, weight, height, activityLevel,
           goalDirection, goalAmount, goalPeriod,
-          weeklyGoal } = profile;          // weeklyGoal kept for legacy compat
+          weeklyGoal } = profile;
   if (!age || !weight || !height) return null;
 
-  const bmr = gender === 'female'
+  const bmr  = gender === 'female'
     ? 10 * weight + 6.25 * height - 5 * age - 161
     : 10 * weight + 6.25 * height - 5 * age + 5;
   const mul  = { sedentary:1.2, light:1.375, moderate:1.55, active:1.725, very_active:1.9 };
   const tdee = Math.round(bmr * (mul[activityLevel] || 1.375));
-
-  // Suggested burn = TDEE activity component (useful for UI default)
   const suggestedBurn = Math.round(tdee - bmr);
 
-  // ── Goal adjustment ──────────────────────────────
   let dailyAdjust = 0;
   const dir = goalDirection || 'maintain';
   if (dir !== 'maintain' && goalAmount) {
     const kgPerWeek = goalPeriod === 'month' ? goalAmount / 4.33 : goalAmount;
     dailyAdjust = dir === 'lose' ? -(kgPerWeek * 7700 / 7) : (kgPerWeek * 7700 / 7);
   } else if (!goalDirection && weeklyGoal) {
-    // Legacy fallback
     const legacyAdj = { cut:-500, cut_aggressive:-750, maintain:0, bulk:250 };
     dailyAdjust = legacyAdj[weeklyGoal] || 0;
   }
 
   const targetCalories = Math.max(1200, Math.round(tdee + dailyAdjust));
   return {
-    tdee,
-    bmr:            Math.round(bmr),
-    suggestedBurn,
-    targetCalories,
-    targetProtein:  Math.round(weight * 2),
-    targetCarbs:    Math.round(targetCalories * 0.40 / 4),
-    targetFat:      Math.round(targetCalories * 0.30 / 9),
+    tdee, bmr: Math.round(bmr), suggestedBurn, targetCalories,
+    targetProtein: Math.round(weight * 2),
+    targetCarbs:   Math.round(targetCalories * 0.40 / 4),
+    targetFat:     Math.round(targetCalories * 0.30 / 9),
   };
 }
 
@@ -193,12 +252,12 @@ app.post('/api/auth/register', async (req, res) => {
     if (password.length < 6)
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-    const users = readUsers();
+    const users = await readUsers();
     if (users.find(u => u.email.toLowerCase() === email.toLowerCase()))
       return res.status(400).json({ error: 'An account with this email already exists' });
 
     const confirmToken  = crypto.randomBytes(32).toString('hex');
-    const autoConfirm   = !emailReady; // skip confirmation if email not set up
+    const autoConfirm   = !emailReady;
 
     const user = {
       id:                 Date.now().toString(),
@@ -213,33 +272,29 @@ app.post('/api/auth/register', async (req, res) => {
         age: null, gender: 'male', weight: null, height: null,
         activityLevel: 'moderate',
         goalDirection: 'maintain', goalAmount: null, goalPeriod: 'week',
-        weeklyGoal: 'maintain',   // legacy compat
+        weeklyGoal: 'maintain',
         dailyTargets: { calories: 2000, protein: 150, carbs: 200, fat: 65 }
       }
     };
 
     users.push(user);
-    writeUsers(users);
+    await writeUsers(users);
 
-    // If email is configured → send confirmation, don't log in yet
     if (!autoConfirm) {
       try {
         await sendConfirmEmail(user, confirmToken);
         return res.json({
-          pending: true,
-          email:   user.email,
+          pending: true, email: user.email,
           message: `Confirmation email sent to ${user.email}. Please check your inbox (and spam folder) and click the link to activate your account.`
         });
       } catch (emailErr) {
-        // Email failed — mark user as needing resend but still created
         console.error('Email send error:', emailErr.message);
         return res.status(500).json({
-          error: `Account created but we couldn't send the confirmation email: ${emailErr.message}. Please check your EMAIL_PASS in .env.`
+          error: `Account created but we couldn't send the confirmation email: ${emailErr.message}.`
         });
       }
     }
 
-    // Email not configured → auto-confirm and log in directly
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
     const { passwordHash: _, confirmToken: __, confirmTokenExpiry: ___, ...safe } = user;
     res.json({ token, user: { ...safe, calculated: calculateTargets(user.profile) } });
@@ -248,43 +303,44 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // ── Confirm email ─────────────────────────────────
-app.get('/api/auth/confirm/:token', (req, res) => {
-  const users = readUsers();
-  const idx   = users.findIndex(u => u.confirmToken === req.params.token);
+app.get('/api/auth/confirm/:token', async (req, res) => {
+  try {
+    const users = await readUsers();
+    const idx   = users.findIndex(u => u.confirmToken === req.params.token);
 
-  if (idx === -1)
-    return res.send(confirmPage(false, 'Invalid Link',
-      'This confirmation link is invalid or has already been used. If you need to register again, please go back to the app.'));
+    if (idx === -1)
+      return res.send(confirmPage(false, 'Invalid Link',
+        'This confirmation link is invalid or has already been used. Please go back to the app.'));
 
-  if (Date.now() > users[idx].confirmTokenExpiry)
-    return res.send(confirmPage(false, 'Link Expired',
-      'This confirmation link has expired (links are valid for 24 hours). Please register again with the same email address.'));
+    if (Date.now() > users[idx].confirmTokenExpiry)
+      return res.send(confirmPage(false, 'Link Expired',
+        'This confirmation link has expired (links are valid for 24 hours). Please register again.'));
 
-  users[idx].confirmed          = true;
-  users[idx].confirmToken       = null;
-  users[idx].confirmTokenExpiry = null;
-  writeUsers(users);
+    users[idx].confirmed          = true;
+    users[idx].confirmToken       = null;
+    users[idx].confirmTokenExpiry = null;
+    await writeUsers(users);
 
-  res.send(confirmPage(true, 'Email Confirmed!',
-    `Welcome aboard, <strong>${users[idx].username}</strong>! 🎉<br>Your account is now active. Tap the button below to open the app and start tracking.`,
-    true));
+    res.send(confirmPage(true, 'Email Confirmed!',
+      `Welcome aboard, <strong>${users[idx].username}</strong>! 🎉<br>Your account is now active. Tap the button below to open the app and start tracking.`,
+      true));
+  } catch (err) { res.status(500).send(confirmPage(false, 'Error', err.message)); }
 });
 
-// ── Resend confirmation email ──────────────────────
+// ── Resend confirmation ────────────────────────────
 app.post('/api/auth/resend-confirm', async (req, res) => {
   try {
     const { email } = req.body;
-    const users = readUsers();
+    const users = await readUsers();
     const idx   = users.findIndex(u => u.email.toLowerCase() === email?.toLowerCase());
 
     if (idx === -1) return res.status(404).json({ error: 'No account found with this email' });
     if (users[idx].confirmed) return res.status(400).json({ error: 'This account is already confirmed. Please login.' });
 
-    // Generate fresh token
     const newToken = crypto.randomBytes(32).toString('hex');
     users[idx].confirmToken       = newToken;
     users[idx].confirmTokenExpiry = Date.now() + 24 * 3600 * 1000;
-    writeUsers(users);
+    await writeUsers(users);
 
     await sendConfirmEmail(users[idx], newToken);
     res.json({ message: `New confirmation email sent to ${email}` });
@@ -313,8 +369,7 @@ async function sendResetEmail(user, token) {
       Reset Password →
     </a>
     <p style="color:#B8A593;font-size:12px;margin:24px 0 0;line-height:1.6">
-      If you didn't request this, you can safely ignore this email.<br>
-      Your password will not change until you click the link above.
+      If you didn't request this, you can safely ignore this email.
     </p>
   </div>
 </body></html>`
@@ -324,16 +379,15 @@ async function sendResetEmail(user, token) {
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
-    const users = readUsers();
+    const users = await readUsers();
     const idx   = users.findIndex(u => u.email.toLowerCase() === email?.toLowerCase()?.trim());
-    // Always return the same message to prevent email enumeration
-    const ok = { message: 'If that email is registered, a reset link has been sent. Check your inbox (and spam folder).' };
+    const ok    = { message: 'If that email is registered, a reset link has been sent. Check your inbox (and spam folder).' };
     if (idx === -1) return res.json(ok);
 
     const token = crypto.randomBytes(32).toString('hex');
     users[idx].resetToken  = token;
-    users[idx].resetExpiry = Date.now() + 3_600_000; // 1 hour
-    writeUsers(users);
+    users[idx].resetExpiry = Date.now() + 3_600_000;
+    await writeUsers(users);
     await sendResetEmail(users[idx], token);
     res.json(ok);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -345,7 +399,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     if (!token || !newPassword || newPassword.length < 6)
       return res.status(400).json({ error: 'New password must be at least 6 characters.' });
 
-    const users = readUsers();
+    const users = await readUsers();
     const idx   = users.findIndex(u => u.resetToken === token && u.resetExpiry > Date.now());
     if (idx === -1)
       return res.status(400).json({ error: 'This reset link has expired or is invalid. Please request a new one.' });
@@ -353,7 +407,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     users[idx].passwordHash = await bcrypt.hash(newPassword, 10);
     users[idx].resetToken   = null;
     users[idx].resetExpiry  = null;
-    writeUsers(users);
+    await writeUsers(users);
     res.json({ message: 'Password updated successfully. You can now log in.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -362,7 +416,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const users = readUsers();
+    const users = await readUsers();
     const user  = users.find(u => u.email.toLowerCase() === email?.toLowerCase());
     if (!user || !(await bcrypt.compare(password, user.passwordHash)))
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -383,61 +437,80 @@ app.post('/api/auth/login', async (req, res) => {
 // ══════════════════════════════════════════════════
 //  PROFILE
 // ══════════════════════════════════════════════════
-app.get('/api/profile', auth, (req, res) => {
-  const user = readUsers().find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const { passwordHash: _, confirmToken: __, confirmTokenExpiry: ___, ...safe } = user;
-  res.json({ ...safe, calculated: calculateTargets(user.profile) });
+app.get('/api/profile', auth, async (req, res) => {
+  try {
+    const users = await readUsers();
+    const user  = users.find(u => u.id === req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { passwordHash: _, confirmToken: __, confirmTokenExpiry: ___, ...safe } = user;
+    res.json({ ...safe, calculated: calculateTargets(user.profile) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/profile', auth, (req, res) => {
-  const users = readUsers();
-  const idx   = users.findIndex(u => u.id === req.user.id);
-  if (idx === -1) return res.status(404).json({ error: 'User not found' });
-  users[idx].profile = { ...users[idx].profile, ...req.body };
-  writeUsers(users);
-  const { passwordHash: _, confirmToken: __, confirmTokenExpiry: ___, ...safe } = users[idx];
-  res.json({ ...safe, calculated: calculateTargets(users[idx].profile) });
+app.put('/api/profile', auth, async (req, res) => {
+  try {
+    const users = await readUsers();
+    const idx   = users.findIndex(u => u.id === req.user.id);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+    users[idx].profile = { ...users[idx].profile, ...req.body };
+    await writeUsers(users);
+    const { passwordHash: _, confirmToken: __, confirmTokenExpiry: ___, ...safe } = users[idx];
+    res.json({ ...safe, calculated: calculateTargets(users[idx].profile) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ══════════════════════════════════════════════════
 //  FOOD LOGS
 // ══════════════════════════════════════════════════
-app.get('/api/logs',    auth, (req, res) => res.json(readLogs(req.user.id)));
-
-app.post('/api/logs', auth, (req, res) => {
-  const logs = readLogs(req.user.id);
-  const now  = new Date();
-  const entry = {
-    id: now.getTime().toString(), timestamp: now.toISOString(),
-    date: now.toLocaleDateString('en-CA'),
-    time: now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }),
-    ...req.body
-  };
-  logs.push(entry); writeLogs(req.user.id, logs);
-  res.json(entry);
+app.get('/api/logs', auth, async (req, res) => {
+  try { res.json(await readLogs(req.user.id)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/logs/:id', auth, (req, res) => {
-  writeLogs(req.user.id, readLogs(req.user.id).filter(l => l.id !== req.params.id));
-  res.json({ success: true });
+app.post('/api/logs', auth, async (req, res) => {
+  try {
+    const logs  = await readLogs(req.user.id);
+    const now   = new Date();
+    const entry = {
+      id: now.getTime().toString(), timestamp: now.toISOString(),
+      date: now.toLocaleDateString('en-CA'),
+      time: now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }),
+      ...req.body
+    };
+    logs.push(entry);
+    await writeLogs(req.user.id, logs);
+    res.json(entry);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/logs/:id', auth, async (req, res) => {
+  try {
+    const logs = await readLogs(req.user.id);
+    await writeLogs(req.user.id, logs.filter(l => l.id !== req.params.id));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ══════════════════════════════════════════════════
 //  BURNED CALORIES
 // ══════════════════════════════════════════════════
-app.get('/api/burned', auth, (req, res) => {
-  const date = req.query.date || new Date().toLocaleDateString('en-CA');
-  res.json({ date, calories: readBurned(req.user.id)[date] || 0 });
+app.get('/api/burned', auth, async (req, res) => {
+  try {
+    const date = req.query.date || new Date().toLocaleDateString('en-CA');
+    const burned = await readBurned(req.user.id);
+    res.json({ date, calories: burned[date] || 0 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/burned', auth, (req, res) => {
-  const { date, calories } = req.body;
-  const d      = date || new Date().toLocaleDateString('en-CA');
-  const burned = readBurned(req.user.id);
-  burned[d]    = Math.max(0, Number(calories) || 0);
-  writeBurned(req.user.id, burned);
-  res.json({ date: d, calories: burned[d] });
+app.post('/api/burned', auth, async (req, res) => {
+  try {
+    const { date, calories } = req.body;
+    const d      = date || new Date().toLocaleDateString('en-CA');
+    const burned = await readBurned(req.user.id);
+    burned[d]    = Math.max(0, Number(calories) || 0);
+    await writeBurned(req.user.id, burned);
+    res.json({ date: d, calories: burned[d] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ══════════════════════════════════════════════════
@@ -478,23 +551,22 @@ Fields:
 });
 
 // ══════════════════════════════════════════════════
-//  ADVICE  (meal suggestions or workout if over target)
+//  ADVICE
 // ══════════════════════════════════════════════════
 app.get('/api/advice', auth, async (req, res) => {
   try {
-    const logs = readLogs(req.user.id);
-    const user = readUsers().find(u => u.id === req.user.id);
+    const [logs, users] = await Promise.all([readLogs(req.user.id), readUsers()]);
+    const user = users.find(u => u.id === req.user.id);
     const calc = calculateTargets(user?.profile || {});
 
-    // ── Today's context ────────────────────────────
-    const todayStr   = new Date().toLocaleDateString('en-CA');
-    const todayLogs  = logs.filter(l => l.date === todayStr);
-    const todayCal   = todayLogs.reduce((s,l) => s+(l.calories||0), 0);
-    const todayPro   = todayLogs.reduce((s,l) => s+(l.protein||0), 0);
-    const todayCarb  = todayLogs.reduce((s,l) => s+(l.carbs||0), 0);
-    const todayFat   = todayLogs.reduce((s,l) => s+(l.fat||0), 0);
+    const todayStr  = new Date().toLocaleDateString('en-CA');
+    const todayLogs = logs.filter(l => l.date === todayStr);
+    const todayCal  = todayLogs.reduce((s,l) => s+(l.calories||0), 0);
+    const todayPro  = todayLogs.reduce((s,l) => s+(l.protein||0), 0);
+    const todayCarb = todayLogs.reduce((s,l) => s+(l.carbs||0), 0);
+    const todayFat  = todayLogs.reduce((s,l) => s+(l.fat||0), 0);
 
-    const burnedMap  = readBurned(req.user.id);
+    const burnedMap   = await readBurned(req.user.id);
     const todayBurned = burnedMap[todayStr] || calc?.suggestedBurn || 0;
 
     const targetCal  = user?.profile?.dailyTargets?.calories || calc?.targetCalories || 2000;
@@ -502,11 +574,10 @@ app.get('/api/advice', auth, async (req, res) => {
     const targetCarb = user?.profile?.dailyTargets?.carbs    || calc?.targetCarbs    || 200;
     const targetFat  = user?.profile?.dailyTargets?.fat      || calc?.targetFat      || 65;
 
-    const remaining  = targetCal - todayCal;    // positive = under target
+    const remaining  = targetCal - todayCal;
     const bodyWeight = user?.profile?.weight || 70;
     const goalDir    = user?.profile?.goalDirection || user?.profile?.weeklyGoal || 'maintain';
 
-    // ── 7-day log summary ──────────────────────────
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-7);
     const recent = logs.filter(l => new Date(l.timestamp) > cutoff);
     const weekLog = recent.length
@@ -515,9 +586,7 @@ app.get('/api/advice', auth, async (req, res) => {
         ).join('\n')
       : '';
 
-    // ── Build today context + instruction ─────────
-    let todayCtx = '';
-    let instruction = '';
+    let todayCtx = '', instruction = '';
 
     if (todayLogs.length > 0) {
       const needPro  = Math.max(0, targetPro  - todayPro);
@@ -528,22 +597,19 @@ app.get('/api/advice', auth, async (req, res) => {
   Eaten: ${todayCal} kcal  (P ${todayPro}g / C ${todayCarb}g / F ${todayFat}g)
   Target: ${targetCal} kcal (P ${targetPro}g / C ${targetCarb}g / F ${targetFat}g)
   Active calories burned: ${todayBurned} kcal
-  ${remaining > 0
-    ? `Still has ${remaining} kcal remaining — under target`
-    : `Over target by ${Math.abs(remaining)} kcal`}`;
+  ${remaining > 0 ? `Still has ${remaining} kcal remaining` : `Over target by ${Math.abs(remaining)} kcal`}`;
 
       if (remaining > 100) {
-        instruction = `The user still has ${remaining} kcal left for today and needs roughly more: protein +${needPro}g, carbs +${needCarb}g, fat +${needFat}g.
-Suggest 1–2 SPECIFIC meals or snacks they could eat NOW to close the gap. Include food name, rough portion size, and estimated macros. Be concrete (e.g. "2 boiled eggs + 1 slice whole-grain toast = ~220 kcal, 16g protein").`;
+        instruction = `The user still has ${remaining} kcal left for today and needs roughly: protein +${needPro}g, carbs +${needCarb}g, fat +${needFat}g. Suggest 1–2 SPECIFIC meals or snacks they could eat NOW to close the gap. Include food name, rough portion size, and estimated macros.`;
       } else if (remaining < -100) {
-        instruction = `The user is ${Math.abs(remaining)} kcal OVER their daily target. Suggest a specific cardio exercise (running, cycling, jump rope, etc.) with exact duration or distance needed to burn approximately ${Math.abs(remaining)} kcal. Base the estimate on a ${bodyWeight}kg person. Give 1–2 exercise options with clear details (e.g. "30 min jog at 8 km/h burns ~280 kcal for your weight").`;
+        instruction = `The user is ${Math.abs(remaining)} kcal OVER their daily target. Suggest a specific cardio exercise with exact duration needed to burn approximately ${Math.abs(remaining)} kcal for a ${bodyWeight}kg person. Give 1–2 options with clear details.`;
       } else {
         instruction = `The user is right on their daily calorie target — great balance! Give 2–3 sentences of positive feedback and one practical tip for tomorrow.`;
       }
     } else if (recent.length === 0) {
       return res.json({ advice: 'Start logging meals to get personalized coaching — tap the camera on the Today tab!' });
     } else {
-      instruction = `The user hasn't logged any meals today yet. Give 2–3 motivating sentences to encourage them to start, and one nutrition tip based on their recent food history.`;
+      instruction = `The user hasn't logged any meals today yet. Give 2–3 motivating sentences and one nutrition tip based on their recent food history.`;
     }
 
     const prompt = `You are a friendly, knowledgeable nutrition coach. User goal: ${goalDir}. Body weight: ${bodyWeight}kg.${weekLog}${todayCtx}\n\n${instruction}\n\nRespond in a warm, motivating tone. Be specific and actionable.`;
@@ -559,11 +625,10 @@ Suggest 1–2 SPECIFIC meals or snacks they could eat NOW to close the gap. Incl
 // ══════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════
-// Local dev: start the server normally
-// Vercel: exports the app so @vercel/node wraps it as a serverless function
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`\n🤠 Dallas Gangs On Diet → ${APP_URL}`);
+    console.log(`💾 Storage: ${USE_MONGO ? 'MongoDB Atlas' : 'Local JSON files'}`);
     console.log(emailReady
       ? `📧 Email confirmation ON  (${process.env.EMAIL_USER})`
       : `📧 Email confirmation OFF (add EMAIL_PASS to .env to enable)\n`);
