@@ -101,7 +101,8 @@ function confirmPage(success, title, message, showLogin = false) {
 }
 
 // ── Data directory ─────────────────────────────────
-const DATA_DIR = path.join(__dirname, 'data');
+// Vercel serverless: filesystem is read-only except /tmp
+const DATA_DIR = process.env.VERCEL ? '/tmp/dgod-data' : path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const readJSON  = (f, d) => { try { return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f,'utf8')) : d; } catch { return d; } };
@@ -482,9 +483,14 @@ Suggest 1–2 SPECIFIC meals or snacks they could eat NOW to close the gap. Incl
 // ══════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════
-app.listen(PORT, () => {
-  console.log(`\n🤠 Dallas Gangs On Diet → ${APP_URL}`);
-  console.log(emailReady
-    ? `📧 Email confirmation ON  (${process.env.EMAIL_USER})`
-    : `📧 Email confirmation OFF (add EMAIL_PASS to .env to enable)\n`);
-});
+// Local dev: start the server normally
+// Vercel: exports the app so @vercel/node wraps it as a serverless function
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n🤠 Dallas Gangs On Diet → ${APP_URL}`);
+    console.log(emailReady
+      ? `📧 Email confirmation ON  (${process.env.EMAIL_USER})`
+      : `📧 Email confirmation OFF (add EMAIL_PASS to .env to enable)\n`);
+  });
+}
+module.exports = app;
