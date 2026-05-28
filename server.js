@@ -555,6 +555,44 @@ Fields:
 });
 
 // ══════════════════════════════════════════════════
+//  TEXT-BASED MEAL ANALYSIS
+// ══════════════════════════════════════════════════
+app.post('/api/analyze-text', auth, async (req, res) => {
+  try {
+    const { description } = req.body;
+    if (!description?.trim())
+      return res.status(400).json({ error: 'Please describe the meal' });
+
+    const response = await getClient().messages.create({
+      model: 'claude-opus-4-7', max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: `The user described a meal without a photo. Estimate the nutrition as accurately as possible.
+MEAL DESCRIPTION: "${description.trim()}"
+
+Return ONLY valid JSON, no markdown, no explanation. Fields:
+- food (string): short descriptive name for the meal
+- calories (number): total estimated kcal
+- protein (number, grams), carbs (number, grams), fat (number, grams), fiber (number, grams)
+- summary (string, 1 sentence): brief description of the meal
+- confidence ("low"|"medium"): use "medium" for specific meals with quantities, "low" if the description is vague or missing amounts
+- servingUnit (null): always null for text-described meals
+- servingsInImage (1): always 1 for text-described meals
+- ingredients (array of {name, calories, protein, carbs, fat, fiber}): breakdown per component
+- warnings (array of strings): include a short entry for EACH of the following that likely applies — artificial preservatives (nitrates/nitrites, BHA, BHT, sodium benzoate, sulfites, TBHQ), trans fats / partially hydrogenated oils, high-fructose corn syrup, artificial food dyes (Red 40, Yellow 5/6 etc.), or strongly pro-inflammatory ingredients (refined seed oils in excess, ultra-processed additives). Write each as a concise phrase e.g. "Contains nitrates — processed meat preservative". Return [] if none apply.`
+      }]
+    });
+
+    const raw = response.content[0].text.trim()
+      .replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+    res.json(JSON.parse(raw));
+  } catch(err) {
+    console.error('Analyze-text error:', err.message);
+    res.status(500).json({ error: err instanceof SyntaxError ? 'Unexpected response, try again' : err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════
 //  ADVICE
 // ══════════════════════════════════════════════════
 app.get('/api/advice', auth, async (req, res) => {

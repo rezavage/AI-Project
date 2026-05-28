@@ -78,12 +78,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .ring-fill{fill:none;stroke-width:8;stroke-linecap:round;stroke-dasharray:264;stroke-dashoffset:264;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset .6s cubic-bezier(.4,0,.2,1)}
 .ring-label{font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.4px;text-align:center;line-height:1.4}
 
-/* ── LOG MEAL BUTTON ──────────────────────────── */
-.log-meal-zone{border:2px dashed var(--accent-l);border-radius:var(--r);padding:22px 16px;text-align:center;cursor:pointer;background:var(--card);margin-bottom:14px;transition:border-color .2s,background .2s;-webkit-tap-highlight-color:transparent}
-.log-meal-zone:active{border-color:var(--accent);background:var(--accent-l)}
-.camera-circle{width:52px;height:52px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px}
-.log-meal-zone h3{font-size:16px;font-weight:800;color:var(--text);margin-bottom:4px}
-.log-meal-zone p{font-size:13px;color:var(--text2)}
+/* ── LOG MEAL ZONE ────────────────────────────── */
+.log-meal-zone{border:2px dashed var(--accent-l);border-radius:var(--r);padding:18px 16px;background:var(--card);margin-bottom:14px}
+.log-meal-zone h3{font-size:16px;font-weight:800;color:var(--text);margin-bottom:12px;text-align:center}
+.log-options{display:flex;gap:10px}
+.log-opt-btn{flex:1;padding:14px 8px;border:1.5px solid var(--border);border-radius:14px;background:white;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;-webkit-tap-highlight-color:transparent;transition:all .15s}
+.log-opt-btn:active{border-color:var(--accent);background:var(--accent-l)}
+.log-opt-icon{font-size:26px;width:48px;height:48px;background:var(--accent-l);border-radius:50%;display:flex;align-items:center;justify-content:center}
+.log-opt-title{font-size:13px;font-weight:800;color:var(--text);text-align:center}
+.log-opt-sub{font-size:11px;color:var(--text3);font-weight:600;text-align:center;line-height:1.4}
+/* ── DESCRIBE MEAL MODAL ──────────────────────── */
+#describe-modal{position:fixed;inset:0;z-index:300;display:none}
+.describe-sheet{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:white;border-radius:24px 24px 0 0;max-height:92dvh;display:flex;flex-direction:column;animation:sheetUp .3s cubic-bezier(.4,0,.2,1)}
+.describe-body{overflow-y:auto;flex:1;padding:14px 20px calc(20px + var(--sb))}
+.describe-hint{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:14px}
+.describe-textarea{width:100%;min-height:110px;padding:12px 14px;border:1.5px solid var(--border);border-radius:12px;font-size:15px;font-family:inherit;color:var(--text);background:var(--bg);resize:vertical;outline:none;margin-bottom:14px;box-sizing:border-box;line-height:1.5}
+.describe-textarea:focus{border-color:var(--accent)}
+.describe-examples-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px}
+.describe-examples{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
+.example-chip{padding:7px 13px;border:1.5px solid var(--border);border-radius:20px;background:white;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:all .15s}
+.example-chip:active{background:var(--accent-l);border-color:var(--accent);color:var(--accent)}
 
 /* ── MEALS LIST ───────────────────────────────── */
 .meals-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
@@ -414,10 +428,20 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
       </div>
 
       <!-- Log meal zone (only shown for today) -->
-      <div class="log-meal-zone" id="log-meal-zone" onclick="openCamera()">
-        <div class="camera-circle">📷</div>
+      <div class="log-meal-zone" id="log-meal-zone">
         <h3>Log a meal</h3>
-        <p>Snap a photo — Claude will estimate the rest</p>
+        <div class="log-options">
+          <button class="log-opt-btn" onclick="openCamera()">
+            <div class="log-opt-icon">📷</div>
+            <div class="log-opt-title">Photo</div>
+            <div class="log-opt-sub">Camera or<br>photo library</div>
+          </button>
+          <button class="log-opt-btn" onclick="openDescribe()">
+            <div class="log-opt-icon">✏️</div>
+            <div class="log-opt-title">Describe</div>
+            <div class="log-opt-sub">No photo?<br>Just type it</div>
+          </button>
+        </div>
       </div>
 
       <!-- Meals list -->
@@ -644,6 +668,33 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
 <!-- Hidden file input -->
 <input type="file" id="food-input" accept="image/*" style="display:none"/>
 
+<!-- ════════════════ DESCRIBE MEAL MODAL ════════════════ -->
+<div id="describe-modal">
+  <div class="modal-backdrop" onclick="closeDescribe()"></div>
+  <div class="describe-sheet">
+    <div class="review-header">
+      <span>Describe your meal</span>
+      <button class="review-close" onclick="closeDescribe()">✕</button>
+    </div>
+    <div class="describe-body">
+      <p class="describe-hint">Tell Claude what you ate and how much — the more detail, the more accurate the estimate.</p>
+      <textarea id="describe-input" class="describe-textarea"
+        placeholder="e.g. 2 scrambled eggs with cheddar cheese, 2 slices of whole wheat toast with butter, and a glass of orange juice"></textarea>
+      <div class="describe-examples-label">Quick examples</div>
+      <div class="describe-examples">
+        <button class="example-chip" onclick="setDescribeExample('Grilled chicken breast 150g with brown rice and steamed broccoli')">🍗 Chicken & rice</button>
+        <button class="example-chip" onclick="setDescribeExample('Big Mac burger and medium fries from McDonald\'s')">🍔 Big Mac + fries</button>
+        <button class="example-chip" onclick="setDescribeExample('Bowl of oatmeal with banana, honey and a handful of walnuts')">🥣 Oatmeal bowl</button>
+        <button class="example-chip" onclick="setDescribeExample('2 slices of pepperoni pizza, regular size')">🍕 2 pizza slices</button>
+        <button class="example-chip" onclick="setDescribeExample('Large Caesar salad with grilled chicken, no croutons')">🥗 Caesar salad</button>
+        <button class="example-chip" onclick="setDescribeExample('Protein shake: 1 scoop whey protein, 250ml milk, 1 banana')">💪 Protein shake</button>
+      </div>
+      <div class="auth-error" id="describe-err" style="margin-bottom:10px"></div>
+      <button class="btn-accent" id="describe-analyze-btn" onclick="analyzeDescription()">🔍 Analyze Meal</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════ REVIEW MODAL ════════════════ -->
 <div id="review-modal">
   <div class="modal-backdrop" onclick="closeReview()"></div>
@@ -652,9 +703,10 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
       <span id="review-header-title">Review &amp; log</span>
       <button class="review-close" onclick="closeReview()">✕</button>
     </div>
-    <!-- Shown while Claude is analyzing the photo -->
+    <!-- Shown while Claude is analyzing the photo or description -->
     <div id="review-analyzing">
       <img id="analyzing-thumb" src="" alt=""/>
+      <div id="analyzing-no-thumb" style="display:none;width:150px;height:150px;border-radius:20px;background:var(--accent-l);align-items:center;justify-content:center;font-size:56px;margin-bottom:22px">🍽️</div>
       <div class="analyzing-spinner"></div>
       <p class="analyzing-text">Analyzing your meal…</p>
       <p class="analyzing-subtext">Claude is identifying ingredients and estimating nutrition</p>
@@ -1192,6 +1244,127 @@ function openCamera() {
   document.getElementById('food-input').click();
 }
 
+// ── Shared helper: enter the analyzing phase ──────────────────────────────
+// showThumb = base64 data URL (photo) or null (text description)
+function startAnalyzingUI(showThumb) {
+  const elAnalyzing = document.getElementById('review-analyzing');
+  const elBody      = document.querySelector('.review-body');
+  const elTitle     = document.getElementById('review-header-title');
+  const elError     = document.getElementById('analyzing-error');
+  const elCloseBtn  = document.getElementById('analyzing-close-btn');
+  const elSpinner   = document.querySelector('.analyzing-spinner');
+  const elSubtext   = document.querySelector('.analyzing-subtext');
+  const thumbImg    = document.getElementById('analyzing-thumb');
+  const thumbIcon   = document.getElementById('analyzing-no-thumb');
+
+  if (showThumb) {
+    thumbImg.src          = showThumb;
+    thumbImg.style.display = 'block';
+    thumbIcon.style.display = 'none';
+  } else {
+    thumbImg.src           = '';
+    thumbImg.style.display = 'none';
+    thumbIcon.style.display = 'flex';
+  }
+
+  elError.style.display    = 'none';
+  elError.textContent      = '';
+  elCloseBtn.style.display = 'none';
+  elSpinner.style.display  = 'block';
+  elSubtext.style.display  = 'block';
+  elSubtext.textContent    = showThumb
+    ? 'Claude is identifying ingredients and estimating nutrition'
+    : 'Claude is estimating your meal from the description';
+  elAnalyzing.style.display = 'flex';
+  elBody.style.display      = 'none';
+  elTitle.textContent       = 'Analyzing…';
+  document.getElementById('review-modal').style.display = 'block';
+
+  currentResult = null;
+  currentPortion = 1;
+  currentServings = 1;
+  document.querySelectorAll('.portion-btn').forEach((b,i) => b.classList.toggle('active', i===1));
+  document.getElementById('serving-section').style.display = 'none';
+  document.getElementById('portion-section').style.display = 'block';
+}
+
+// ── Shared helper: transition from analyzing to review ────────────────────
+function showReviewUI(data, thumb) {
+  const elAnalyzing = document.getElementById('review-analyzing');
+  const elBody      = document.querySelector('.review-body');
+  const reviewImg   = document.getElementById('review-img');
+
+  elAnalyzing.style.display = 'none';
+  elBody.style.display      = '';
+  document.getElementById('review-header-title').textContent = 'Review & log';
+
+  if (thumb) {
+    reviewImg.src          = thumb;
+    reviewImg.style.display = 'block';
+  } else {
+    reviewImg.src           = '';
+    reviewImg.style.display = 'none';
+  }
+  fillReview(data);
+}
+
+// ── Shared helper: show error inside analyzing panel ──────────────────────
+function showAnalyzingError(msg) {
+  document.querySelector('.analyzing-spinner').style.display = 'none';
+  document.querySelector('.analyzing-subtext').style.display = 'none';
+  const elError  = document.getElementById('analyzing-error');
+  const elCloseBtn = document.getElementById('analyzing-close-btn');
+  elError.textContent    = '⚠️ ' + msg;
+  elError.style.display  = 'block';
+  elCloseBtn.style.display = 'block';
+}
+
+// ── Describe-meal modal ───────────────────────────────────────────────────
+function openDescribe() {
+  document.getElementById('describe-input').value = '';
+  document.getElementById('describe-err').textContent = '';
+  document.getElementById('describe-modal').style.display = 'block';
+  setTimeout(() => document.getElementById('describe-input').focus(), 350);
+}
+
+function closeDescribe() {
+  document.getElementById('describe-modal').style.display = 'none';
+}
+
+function setDescribeExample(text) {
+  document.getElementById('describe-input').value = text;
+  document.getElementById('describe-input').focus();
+}
+
+async function analyzeDescription() {
+  const description = document.getElementById('describe-input').value.trim();
+  const errEl = document.getElementById('describe-err');
+  errEl.textContent = '';
+  if (!description) {
+    errEl.textContent = 'Please describe what you ate first.';
+    document.getElementById('describe-input').focus();
+    return;
+  }
+
+  const btn = document.getElementById('describe-analyze-btn');
+  btn.disabled = true; btn.textContent = 'Analyzing…';
+
+  closeDescribe();
+  startAnalyzingUI(null);       // no thumbnail for text
+
+  try {
+    const data = await api('POST', '/api/analyze-text', { description });
+    currentResult   = data;
+    currentServings = Math.max(0.5, data.servingsInImage || 1);
+    currentThumb    = null;     // no photo thumbnail to save
+    showReviewUI(data, null);
+  } catch(err) {
+    showAnalyzingError('Could not analyze: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 Analyze Meal';
+  }
+}
+
 // Convert any image (HEIC, HEIF, WEBP, etc.) to a JPEG File the API accepts.
 // Uses the browser's Canvas — it can decode HEIC even though Anthropic cannot.
 function toJpeg(file) {
@@ -1229,58 +1402,20 @@ document.getElementById('food-input').addEventListener('change', async function(
   let file = rawFile;
   try { file = await toJpeg(rawFile); } catch(convErr) { /* use original as fallback */ }
 
-  // Generate thumbnail
+  // Generate thumbnail and enter analyzing state
   currentThumb = await generateThumbnail(file);
+  startAnalyzingUI(currentThumb);
 
-  // ── Phase 1: show analyzing panel only ──────────────
-  const elAnalyzing   = document.getElementById('review-analyzing');
-  const elBody        = document.querySelector('.review-body');
-  const elTitle       = document.getElementById('review-header-title');
-  const elError       = document.getElementById('analyzing-error');
-  const elCloseBtn    = document.getElementById('analyzing-close-btn');
-  const elSpinner     = document.querySelector('.analyzing-spinner');
-  const elSubtext     = document.querySelector('.analyzing-subtext');
-
-  document.getElementById('analyzing-thumb').src = currentThumb;
-  elError.style.display   = 'none';
-  elError.textContent     = '';
-  elCloseBtn.style.display = 'none';
-  elSpinner.style.display  = 'block';
-  elSubtext.style.display  = 'block';
-  elAnalyzing.style.display = 'flex';
-  elBody.style.display      = 'none';
-  elTitle.textContent       = 'Analyzing…';
-  document.getElementById('review-modal').style.display = 'block';
-
-  // Reset state
-  currentResult = null;
-  currentPortion = 1;
-  currentServings = 1;
-  document.querySelectorAll('.portion-btn').forEach((b,i) => b.classList.toggle('active', i===1));
-  document.getElementById('serving-section').style.display = 'none';
-  document.getElementById('portion-section').style.display = 'block';
-
-  // ── Phase 2: analyze, then reveal interactive controls ──
+  // Analyze, then reveal interactive controls
   try {
     const fd = new FormData();
     fd.append('image', file);
     const data = await api('POST', '/api/analyze', fd, true);
-    currentResult  = data;
+    currentResult   = data;
     currentServings = Math.max(0.5, data.servingsInImage || 1);
-
-    // Swap panels
-    elAnalyzing.style.display = 'none';
-    elBody.style.display      = '';
-    elTitle.textContent       = 'Review & log';
-    document.getElementById('review-img').src = currentThumb;
-    fillReview(data);
+    showReviewUI(data, currentThumb);
   } catch(err) {
-    // Stay in analyzing panel but show the error with a close button
-    elSpinner.style.display  = 'none';
-    elSubtext.style.display  = 'none';
-    elError.textContent      = '⚠️ Could not analyze image: ' + err.message;
-    elError.style.display    = 'block';
-    elCloseBtn.style.display = 'block';
+    showAnalyzingError('Could not analyze image: ' + err.message);
   }
 });
 
@@ -1438,7 +1573,10 @@ function closeReview() {
   document.getElementById('review-share-btn').style.display = 'none';
   // Reset both panels so the modal is clean next time
   document.getElementById('review-analyzing').style.display = 'none';
+  document.getElementById('analyzing-no-thumb').style.display = 'none';
+  document.getElementById('analyzing-thumb').style.display = 'block';
   document.querySelector('.review-body').style.display = '';
+  document.getElementById('review-img').style.display = 'block';
   document.getElementById('review-header-title').textContent = 'Review & log';
   currentResult = null; currentThumb = null;
   currentPortion = 1; currentServings = 1;
