@@ -537,7 +537,8 @@ Fields:
 - confidence ("low"|"medium"|"high")
 - servingUnit (string|null): the natural counting unit for THIS food if it is discretely countable — e.g. "slice" for pizza/bread/cake, "piece" for chicken pieces/wings/nuggets, "roll" for sushi, "cup" for soup/rice (if clearly portioned), "whole" for a whole item like a burger or apple. Use null for non-countable items like a mixed salad, pasta dish, or smoothie.
 - servingsInImage (number): how many of the servingUnit are visible in the image (e.g. 2 if two pizza slices are shown). If servingUnit is null, set this to 1.
-- ingredients (array of {name, calories, protein, carbs, fat, fiber}): breakdown per ingredient for the total shown.` }
+- ingredients (array of {name, calories, protein, carbs, fat, fiber}): breakdown per ingredient for the total shown.
+- warnings (array of strings): include a short entry for EACH of the following that clearly applies to this food — artificial preservatives (nitrates/nitrites, BHA, BHT, sodium benzoate, sulfites, TBHQ), trans fats / partially hydrogenated oils, high-fructose corn syrup, artificial food dyes (Red 40, Yellow 5/6 etc.), or strongly pro-inflammatory ingredients (refined seed oils in excess, ultra-processed additives). Write each as a concise phrase e.g. "Contains nitrates — processed meat preservative" or "High in refined seed oils (pro-inflammatory)". Return [] if none apply. Be accurate — only flag genuine concerns, not general unhealthiness.` }
         ]
       }]
     });

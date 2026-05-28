@@ -218,8 +218,14 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
 .height-imperial-row .settings-input{width:62px;flex-shrink:0;text-align:center}
 .height-unit-lbl{font-size:12px;font-weight:700;color:var(--text3);flex-shrink:0}
 /* ── Share ────────────────────────────────────── */
-.share-icon-btn{width:38px;height:38px;border:1.5px solid var(--border);border-radius:10px;background:white;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent}
-.share-icon-btn:active{background:var(--border)}
+.share-text-btn{padding:8px 14px;border:1.5px solid var(--border);border-radius:10px;background:white;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:5px;flex-shrink:0;-webkit-tap-highlight-color:transparent;white-space:nowrap}
+.share-text-btn:active{background:var(--border)}
+/* ── Warnings ─────────────────────────────────── */
+.warning-banner{background:#FFF7ED;border:1.5px solid #FDBA74;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.warning-banner-title{font-size:12px;font-weight:800;color:#C2410C;margin-bottom:8px;display:flex;align-items:center;gap:5px;text-transform:uppercase;letter-spacing:0.4px}
+.warning-item{font-size:13px;color:#7C2D12;line-height:1.5;padding:3px 0;display:flex;align-items:flex-start;gap:7px}
+.warning-item::before{content:"⚠️";flex-shrink:0;font-size:13px}
+.meal-warn-badge{display:inline-flex;align-items:center;gap:3px;background:#FEF3C7;color:#92400E;font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px;margin-top:4px;border:1px solid #FCD34D}
 .meals-header{display:flex;justify-content:space-between;align-items:center;padding:0 0 6px}
 #share-sheet{position:fixed;inset:0;z-index:600;display:none;flex-direction:column;justify-content:flex-end;align-items:center}
 .share-backdrop{position:absolute;inset:0;background:rgba(44,24,16,0.48);backdrop-filter:blur(3px)}
@@ -420,7 +426,7 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
           <h3 id="meals-day-label" style="margin:0 0 2px">Today's meals</h3>
           <span class="meals-count" id="meals-count">0 logged</span>
         </div>
-        <button class="share-icon-btn" onclick="shareTodaySummary()" title="Share today's log">📤</button>
+        <button class="share-text-btn" onclick="shareTodaySummary()">📤 Share</button>
       </div>
       <div id="meals-list">
         <div class="empty-state"><div class="empty-icon">🥗</div><p>No meals yet.<br>Tap the camera to log your first meal!</p></div>
@@ -636,7 +642,7 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
 </div><!-- /main-app -->
 
 <!-- Hidden file input -->
-<input type="file" id="food-input" accept="image/*" capture="environment" style="display:none"/>
+<input type="file" id="food-input" accept="image/*" style="display:none"/>
 
 <!-- ════════════════ REVIEW MODAL ════════════════ -->
 <div id="review-modal">
@@ -694,9 +700,16 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
         <div class="rm-macro"><div class="rm-macro-val rm-fat" id="rm-fat">0g</div><div class="rm-macro-label">F</div></div>
       </div>
       <p class="review-summary-text" id="review-summary"></p>
+      <!-- Health warnings (preservatives / inflammation) -->
+      <div id="review-warnings" style="display:none">
+        <div class="warning-banner">
+          <div class="warning-banner-title">🚨 Health Alerts</div>
+          <div id="review-warning-list"></div>
+        </div>
+      </div>
       <div class="review-btns">
         <button class="btn-ghost" onclick="closeReview()">Discard</button>
-        <button class="share-icon-btn" id="review-share-btn" onclick="shareMealReview()" title="Share this meal" style="display:none">📤</button>
+        <button class="share-text-btn" id="review-share-btn" onclick="shareMealReview()" style="display:none">📤 Share</button>
         <button class="btn-accent" id="log-btn" onclick="logMeal()" style="flex:2">Log it</button>
       </div>
     </div>
@@ -1130,9 +1143,13 @@ function renderMeals(logs) {
   container.innerHTML = [...logs].reverse().map(entry => {
     mealDataMap[entry.id] = entry;   // store for detail tap
 
-    const confClass = {'high':'conf-high','medium':'conf-medium','low':'conf-low'}[entry.confidence] || 'conf-medium';
-    const confLabel = (entry.confidence || 'medium').toUpperCase();
+    const confClass    = {'high':'conf-high','medium':'conf-medium','low':'conf-low'}[entry.confidence] || 'conf-medium';
+    const confLabel    = (entry.confidence || 'medium').toUpperCase();
     const hasBreakdown = entry.ingredients && entry.ingredients.length > 0;
+    const warnings     = Array.isArray(entry.warnings) ? entry.warnings : [];
+    const warnBadge    = warnings.length
+      ? `<div class="meal-warn-badge">⚠️ ${warnings.length} health alert${warnings.length > 1 ? 's' : ''}</div>`
+      : '';
     const thumbHtml = entry.thumbnail
       ? `<img src="${entry.thumbnail}" alt="" style="width:80px;height:80px;object-fit:cover;flex-shrink:0;border-radius:0">`
       : `<div class="meal-thumb">🍽️</div>`;
@@ -1149,6 +1166,7 @@ function renderMeals(logs) {
             <strong>${Math.round(entry.calories||0)} kcal</strong>
             &nbsp; P ${entry.protein||0} &nbsp; C ${entry.carbs||0} &nbsp; F ${entry.fat||0}
           </div>
+          ${warnBadge}
           <div style="font-size:10px;color:var(--text3);margin-top:3px">
             ${hasBreakdown ? '📊 Tap for ingredient breakdown' : '📊 Tap for details'}
           </div>
@@ -1255,7 +1273,18 @@ function pluralUnit(unit, count) {
 function fillReview(data, _portion) {
   document.getElementById('review-food-input').value    = data.food || '';
   document.getElementById('review-summary').textContent  = data.summary || '';
-  document.getElementById('review-share-btn').style.display = 'flex'; // reveal share btn
+  document.getElementById('review-share-btn').style.display = 'inline-flex'; // reveal share btn
+
+  // Health warnings
+  const warnings   = Array.isArray(data.warnings) ? data.warnings : [];
+  const warnBanner = document.getElementById('review-warnings');
+  if (warnings.length) {
+    document.getElementById('review-warning-list').innerHTML =
+      warnings.map(w => `<div class="warning-item">${escHtml(w)}</div>`).join('');
+    warnBanner.style.display = 'block';
+  } else {
+    warnBanner.style.display = 'none';
+  }
 
   const unit     = data.servingUnit;
   const inImage  = Math.max(0.5, data.servingsInImage || 1);
@@ -2024,6 +2053,17 @@ function showDetails(entry) {
           <td class="c-fat"><strong>${Math.round(tFat)}g</strong></td>
         </tr></tfoot>
       </table>`;
+  }
+
+  // Warnings section (shown below table / fallback message)
+  const warnings = Array.isArray(entry.warnings) ? entry.warnings : [];
+  if (warnings.length) {
+    const warnHtml = `
+      <div class="warning-banner" style="margin-top:14px">
+        <div class="warning-banner-title">🚨 Health Alerts</div>
+        ${warnings.map(w => `<div class="warning-item">${escHtml(w)}</div>`).join('')}
+      </div>`;
+    document.getElementById('details-content').innerHTML += warnHtml;
   }
 
   document.getElementById('details-backdrop').style.display = 'block';
