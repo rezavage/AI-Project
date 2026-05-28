@@ -14,7 +14,16 @@ const app        = express();
 const PORT       = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dgod-secret-2024';
 const APP_URL    = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
-const client     = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Lazy-init so a missing key gives a clear 500 instead of a crash at startup
+let _anthropicClient = null;
+function getClient() {
+  if (!_anthropicClient) {
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) throw new Error('ANTHROPIC_API_KEY is not set. Add it to Vercel → Settings → Environment Variables, then redeploy.');
+    _anthropicClient = new Anthropic({ apiKey: key });
+  }
+  return _anthropicClient;
+}
 const upload     = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ── Email transporter ─────────────────────────────
@@ -373,7 +382,7 @@ app.post('/api/analyze', auth, upload.single('image'), async (req, res) => {
     const base64Image = req.file.buffer.toString('base64');
     const mediaType   = req.file.mimetype || 'image/jpeg';
 
-    const response = await client.messages.create({
+    const response = await getClient().messages.create({
       model: 'claude-opus-4-7', max_tokens: 2048,
       messages: [{
         role: 'user',
@@ -472,7 +481,7 @@ Suggest 1–2 SPECIFIC meals or snacks they could eat NOW to close the gap. Incl
 
     const prompt = `You are a friendly, knowledgeable nutrition coach. User goal: ${goalDir}. Body weight: ${bodyWeight}kg.${weekLog}${todayCtx}\n\n${instruction}\n\nRespond in a warm, motivating tone. Be specific and actionable.`;
 
-    const response = await client.messages.create({
+    const response = await getClient().messages.create({
       model:'claude-opus-4-7', max_tokens:700,
       messages:[{ role:'user', content: prompt }]
     });
