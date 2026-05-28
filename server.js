@@ -520,7 +520,10 @@ app.post('/api/analyze', auth, upload.single('image'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No image provided' });
     const base64Image = req.file.buffer.toString('base64');
-    const mediaType   = req.file.mimetype || 'image/jpeg';
+    // Anthropic only accepts jpeg/png/gif/webp — normalise anything else (e.g. heic, heif)
+    const ALLOWED_TYPES = ['image/jpeg','image/png','image/gif','image/webp'];
+    const rawType   = (req.file.mimetype || '').toLowerCase();
+    const mediaType = ALLOWED_TYPES.includes(rawType) ? rawType : 'image/jpeg';
 
     const response = await getClient().messages.create({
       model: 'claude-opus-4-7', max_tokens: 2048,
