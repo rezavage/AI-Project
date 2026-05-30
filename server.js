@@ -665,6 +665,81 @@ app.get('/api/advice', auth, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════
+//  WEEKLY REPORT
+// ══════════════════════════════════════════════════
+app.get('/api/weekly-report', auth, async (req, res) => {
+  try {
+    const [logs, users] = await Promise.all([readLogs(req.user.id), readUsers()]);
+    const user  = users.find(u => u.id === req.user.id);
+    const calc  = calculateTargets(user?.profile || {});
+    const targetCal  = user?.profile?.dailyTargets?.calories || calc?.targetCalories || 2000;
+    const targetPro  = user?.profile?.dailyTargets?.protein  || calc?.targetProtein  || 150;
+    const targetCarb = user?.profile?.dailyTargets?.carbs    || calc?.targetCarbs    || 200;
+    const targetFat  = user?.profile?.dailyTargets?.fat      || calc?.targetFat      || 65;
+
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      return d.toLocaleDateString('en-CA');
+    });
+
+    const dayStats = days.map(date => {
+      const dl   = logs.filter(l => l.date === date);
+      const cal  = dl.reduce((s,l) => s+(l.calories||0), 0);
+      const pro  = dl.reduce((s,l) => s+(l.protein||0),  0);
+      const carb = dl.reduce((s,l) => s+(l.carbs||0),    0);
+      const fat  = dl.reduce((s,l) => s+(l.fat||0),      0);
+      return { date, cal, pro, carb, fat, meals: dl.length };
+    });
+
+    const daysWithData = dayStats.filter(d => d.meals > 0);
+    if (!daysWithData.length)
+      return res.json({ empty: true, message: 'No meals logged in the past 7 days.' });
+
+    const avgCal  = Math.round(daysWithData.reduce((s,d) => s+d.cal,  0) / daysWithData.length);
+    const avgPro  = Math.round(daysWithData.reduce((s,d) => s+d.pro,  0) / daysWithData.length);
+    const avgCarb = Math.round(daysWithData.reduce((s,d) => s+d.carb, 0) / daysWithData.length);
+    const avgFat  = Math.round(daysWithData.reduce((s,d) => s+d.fat,  0) / daysWithData.length);
+
+    const bestDay  = daysWithData.reduce((a,b) =>
+      Math.abs(b.cal-targetCal) < Math.abs(a.cal-targetCal) ? b : a);
+    const worstDay = daysWithData.reduce((a,b) =>
+      Math.abs(b.cal-targetCal) > Math.abs(a.cal-targetCal) ? b : a);
+
+    const foodCount = {};
+    logs.filter(l => days.includes(l.date)).forEach(l => {
+      const n = (l.food||'').trim();
+      if (n) foodCount[n] = (foodCount[n]||0) + 1;
+    });
+    const topFoods = Object.entries(foodCount).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([f])=>f);
+
+    const daysOnTrack = daysWithData.filter(d =>
+      Math.abs(d.cal-targetCal)/targetCal <= 0.10).length;
+    const totalBalance = daysWithData.reduce((s,d) => s+(d.cal-targetCal), 0);
+    const goalDir = user?.profile?.goalDirection || 'maintain';
+
+    const weekSummary = daysWithData
+      .map(d => `${d.date}: ${d.cal} kcal (${d.meals} meal${d.meals!==1?'s':''})`)
+      .join('\n');
+
+    const prompt = `You are a concise nutrition coach. Here is a user's 7-day food log:\n\n${weekSummary}\n\nTarget: ${targetCal} kcal/day | Goal: ${goalDir}\nAvg: ${avgCal} kcal/day | Days on target (±10%): ${daysOnTrack}/${daysWithData.length}\nTop foods this week: ${topFoods.join(', ')||'varied'}\nWeekly calorie balance vs target: ${totalBalance>=0?'+':''}${totalBalance} kcal\n\nWrite a 2–3 sentence weekly insight. Mention one pattern you notice and one specific actionable tip for next week. Be warm and motivating.`;
+
+    const response = await getClient().messages.create({
+      model: 'claude-opus-4-7', max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    res.json({
+      dayStats, daysWithData: daysWithData.length,
+      avgCal, avgPro, avgCarb, avgFat,
+      targetCal, targetPro, targetCarb, targetFat,
+      bestDay, worstDay, topFoods,
+      daysOnTrack, totalBalance, goalDir,
+      insight: response.content[0].text,
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════
 if (require.main === module) {

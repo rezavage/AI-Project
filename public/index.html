@@ -297,6 +297,34 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
 .spinner{width:18px;height:18px;border:3px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* ── WEEKLY REPORT ───────────────────────────── */
+.wr-card{background:var(--card);border-radius:var(--r);padding:18px 16px;box-shadow:var(--shadow);margin-bottom:14px}
+.wr-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.wr-header h3{font-size:16px;font-weight:800;color:var(--text);margin:0}
+.wr-gen-btn{padding:8px 14px;background:var(--accent);color:white;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .15s}
+.wr-gen-btn:active{background:var(--accent-d)}
+.wr-gen-btn:disabled{opacity:.6;cursor:not-allowed}
+.wr-stats-row{display:flex;gap:8px;margin-bottom:14px}
+.wr-stat{flex:1;background:var(--card2);border-radius:10px;padding:10px 8px;text-align:center}
+.wr-stat-val{font-size:18px;font-weight:900;color:var(--accent)}
+.wr-stat-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--text3);margin-top:2px}
+.wr-bar-section{margin-bottom:14px}
+.wr-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.wr-bar-date{font-size:11px;color:var(--text3);width:38px;flex-shrink:0;text-align:right}
+.wr-bar-track{flex:1;height:10px;background:var(--ring-bg);border-radius:99px;overflow:hidden;position:relative}
+.wr-bar-fill{height:100%;border-radius:99px;transition:width .5s}
+.wr-bar-fill.on{background:var(--ring-pro)}
+.wr-bar-fill.over{background:var(--accent)}
+.wr-bar-fill.under{background:var(--ring-carb)}
+.wr-bar-target{position:absolute;top:0;bottom:0;width:2px;background:rgba(44,24,16,0.25);border-radius:1px}
+.wr-bar-cal{font-size:11px;font-weight:700;color:var(--text2);width:46px;flex-shrink:0}
+.wr-top-foods{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.wr-food-chip{padding:5px 11px;background:var(--accent-l);border-radius:20px;font-size:12px;font-weight:600;color:var(--accent)}
+.wr-insight{background:linear-gradient(135deg,#FDF5EC,var(--card2));border-radius:12px;padding:14px;font-size:14px;line-height:1.7;color:var(--text);border-left:3px solid var(--accent)}
+.wr-insight-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:6px}
+.wr-empty{text-align:center;padding:20px 0;color:var(--text3);font-size:13px}
+.wr-days-badge{font-size:12px;color:var(--text2);font-weight:600}
+
 /* ── ANIMATED COWBOY ─────────────────────────── */
 @keyframes cowboy-bounce{
   0%,100%{transform:translateY(0) rotate(-6deg) scale(1)}
@@ -486,6 +514,18 @@ input[type=range].goal-slider::-webkit-slider-thumb{-webkit-appearance:none;widt
 
     <!-- ── HISTORY TAB ── -->
     <div id="tab-history" class="tab-pane">
+
+      <!-- Weekly Report card -->
+      <div class="wr-card">
+        <div class="wr-header">
+          <h3>📊 Weekly Report</h3>
+          <button class="wr-gen-btn" id="wr-btn" onclick="loadWeeklyReport()">Generate</button>
+        </div>
+        <div id="wr-content">
+          <div class="wr-empty">Tap Generate to see your 7-day summary &amp; AI insight.</div>
+        </div>
+      </div>
+
       <div id="history-list">
         <div class="empty-state"><div class="empty-icon">📅</div><p>No history yet.<br>Start logging meals!</p></div>
       </div>
@@ -1718,6 +1758,92 @@ async function loadHistory() {
 function toggleHistDay(id) {
   const el = document.getElementById(id);
   if (el) el.style.display = el.style.display==='block'?'none':'block';
+}
+
+// ═══════════════════════════════════════════════
+//  WEEKLY REPORT
+// ═══════════════════════════════════════════════
+async function loadWeeklyReport() {
+  const btn     = document.getElementById('wr-btn');
+  const content = document.getElementById('wr-content');
+  btn.disabled  = true; btn.textContent = 'Loading…';
+  content.innerHTML = '<div class="wr-empty">🧠 Claude is analyzing your week…</div>';
+
+  try {
+    const d = await api('GET', '/api/weekly-report');
+
+    if (d.empty) {
+      content.innerHTML = `<div class="wr-empty">📭 ${escHtml(d.message)}</div>`;
+      return;
+    }
+
+    const targetCal = d.targetCal;
+    const maxCal    = Math.max(...d.dayStats.map(s => s.cal), targetCal);
+
+    // Mini bar chart — all 7 days oldest→newest
+    const bars = [...d.dayStats].reverse().map(s => {
+      if (!s.meals) return '';
+      const pct  = Math.min(s.cal / maxCal, 1) * 100;
+      const tPct = Math.min(targetCal / maxCal, 1) * 100;
+      const diff = s.cal - targetCal;
+      const cls  = Math.abs(diff)/targetCal <= 0.10 ? 'on' : diff > 0 ? 'over' : 'under';
+      const dayLabel = s.date.slice(5); // MM-DD
+      return `
+        <div class="wr-bar-row">
+          <span class="wr-bar-date">${dayLabel}</span>
+          <div class="wr-bar-track">
+            <div class="wr-bar-fill ${cls}" style="width:${pct.toFixed(1)}%"></div>
+            <div class="wr-bar-target" style="left:${tPct.toFixed(1)}%"></div>
+          </div>
+          <span class="wr-bar-cal">${Math.round(s.cal)}</span>
+        </div>`;
+    }).join('');
+
+    // Top foods chips
+    const foodChips = d.topFoods.length
+      ? d.topFoods.map(f => `<span class="wr-food-chip">${escHtml(f)}</span>`).join('')
+      : '<span class="wr-food-chip" style="background:var(--border);color:var(--text3)">varied</span>';
+
+    const balSign = d.totalBalance >= 0 ? '+' : '';
+    const onTrackText = `${d.daysOnTrack} of ${d.daysWithData} days on target`;
+
+    const insightHtml = d.insight
+      .replace(/\n\n/g, '</p><p style="margin-top:8px">')
+      .replace(/\n/g, '<br>');
+
+    content.innerHTML = `
+      <!-- stat pills -->
+      <div class="wr-stats-row">
+        <div class="wr-stat">
+          <div class="wr-stat-val">${d.avgCal}</div>
+          <div class="wr-stat-lbl">Avg kcal</div>
+        </div>
+        <div class="wr-stat">
+          <div class="wr-stat-val">${d.daysOnTrack}/${d.daysWithData}</div>
+          <div class="wr-stat-lbl">On target</div>
+        </div>
+        <div class="wr-stat">
+          <div class="wr-stat-val" style="color:${d.totalBalance>200?'var(--accent)':d.totalBalance<-200?'var(--ring-pro)':'var(--text)'}">${balSign}${d.totalBalance}</div>
+          <div class="wr-stat-lbl">kcal balance</div>
+        </div>
+      </div>
+
+      <!-- bar chart -->
+      <div class="wr-bar-section">${bars}</div>
+
+      <!-- top foods -->
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:6px">Most logged</div>
+      <div class="wr-top-foods">${foodChips}</div>
+
+      <!-- AI insight -->
+      <div class="wr-insight-lbl">🤠 Claude's Take</div>
+      <div class="wr-insight"><p style="margin:0">${insightHtml}</p></div>`;
+
+  } catch(e) {
+    content.innerHTML = `<div class="wr-empty">❌ ${escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Refresh';
+  }
 }
 
 // ═══════════════════════════════════════════════
