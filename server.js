@@ -49,38 +49,38 @@ async function sendConfirmEmail(user, token) {
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-<body style="margin:0;padding:0;background:#F2EBE0;font-family:-apple-system,Arial,sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F2EBE0;padding:40px 20px">
+<body style="margin:0;padding:0;background:#F2F4F5;font-family:-apple-system,Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F2F4F5;padding:40px 20px">
     <tr><td align="center">
-      <table width="100%" style="max-width:480px;background:#FFFDF8;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(44,24,16,0.10)">
+      <table width="100%" style="max-width:480px;background:#FFFFFF;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(17,34,64,0.10)">
         <tr>
-          <td style="background:#C4714A;padding:32px;text-align:center">
+          <td style="background:#00A887;padding:32px;text-align:center">
             <div style="font-size:52px;margin-bottom:8px">🤠</div>
             <h1 style="margin:0;color:white;font-size:22px;font-weight:900;letter-spacing:-0.5px">Dallas Gangs On Diet</h1>
           </td>
         </tr>
         <tr>
           <td style="padding:36px 32px;text-align:center">
-            <h2 style="color:#2C1810;font-size:20px;font-weight:800;margin:0 0 12px">Confirm your email</h2>
-            <p style="color:#8B7355;font-size:15px;line-height:1.6;margin:0 0 28px">
-              Hey <strong style="color:#2C1810">${user.username}</strong>! You're almost in.<br>
+            <h2 style="color:#112240;font-size:20px;font-weight:800;margin:0 0 12px">Confirm your email</h2>
+            <p style="color:#4A6878;font-size:15px;line-height:1.6;margin:0 0 28px">
+              Hey <strong style="color:#112240">${user.username}</strong>! You're almost in.<br>
               Click the button below to confirm your email and activate your account.
             </p>
             <a href="${link}"
-               style="display:inline-block;background:#C4714A;color:white;padding:15px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:800;letter-spacing:0.2px">
+               style="display:inline-block;background:#00A887;color:white;padding:15px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:800;letter-spacing:0.2px">
               ✅ Confirm My Email
             </a>
-            <p style="color:#B8A593;font-size:12px;margin:24px 0 0;line-height:1.6">
+            <p style="color:#8AAAB8;font-size:12px;margin:24px 0 0;line-height:1.6">
               This link expires in <strong>24 hours</strong>.<br>
               If you didn't create this account, you can safely ignore this email.
             </p>
           </td>
         </tr>
         <tr>
-          <td style="background:#F2EBE0;padding:20px;text-align:center">
-            <p style="color:#B8A593;font-size:11px;margin:0">
+          <td style="background:#F2F4F5;padding:20px;text-align:center">
+            <p style="color:#8AAAB8;font-size:11px;margin:0">
               Or copy this link into your browser:<br>
-              <a href="${link}" style="color:#C4714A;word-break:break-all;font-size:11px">${link}</a>
+              <a href="${link}" style="color:#00A887;word-break:break-all;font-size:11px">${link}</a>
             </p>
           </td>
         </tr>
@@ -99,12 +99,12 @@ function confirmPage(success, title, message, showLogin = false) {
 <html><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${title} — Dallas Gangs On Diet</title></head>
-<body style="margin:0;padding:0;background:#F2EBE0;font-family:-apple-system,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh">
-  <div style="max-width:400px;width:90%;background:#FFFDF8;border-radius:20px;padding:48px 36px;text-align:center;box-shadow:0 4px 24px rgba(44,24,16,0.10)">
+<body style="margin:0;padding:0;background:#F2F4F5;font-family:-apple-system,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh">
+  <div style="max-width:400px;width:90%;background:#FFFFFF;border-radius:20px;padding:48px 36px;text-align:center;box-shadow:0 4px 24px rgba(17,34,64,0.10)">
     <div style="font-size:56px;margin-bottom:16px">${icon}</div>
-    <h2 style="color:#2C1810;font-size:22px;font-weight:900;margin:0 0 12px">${title}</h2>
-    <p style="color:#8B7355;font-size:15px;line-height:1.6;margin:0 0 28px">${message}</p>
-    ${showLogin ? `<a href="${APP_URL}" style="display:inline-block;background:#C4714A;color:white;padding:13px 32px;border-radius:12px;text-decoration:none;font-size:15px;font-weight:800">Open App &amp; Login →</a>` : ''}
+    <h2 style="color:#112240;font-size:22px;font-weight:900;margin:0 0 12px">${title}</h2>
+    <p style="color:#4A6878;font-size:15px;line-height:1.6;margin:0 0 28px">${message}</p>
+    ${showLogin ? `<a href="${APP_URL}" style="display:inline-block;background:#00A887;color:white;padding:13px 32px;border-radius:12px;text-decoration:none;font-size:15px;font-weight:800">Open App &amp; Login →</a>` : ''}
   </div>
 </body></html>`;
 }
@@ -237,7 +237,11 @@ function auth(req, res, next) {
 // ── Middleware ─────────────────────────────────────
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-store');
+  }
+}));
 
 // ══════════════════════════════════════════════════
 //  AUTH ROUTES
@@ -357,18 +361,18 @@ async function sendResetEmail(user, token) {
     subject: 'Reset your password — Dallas Gangs On Diet',
     html: `
 <!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:0;background:#F2EBE0;font-family:-apple-system,Arial,sans-serif">
-  <div style="max-width:480px;margin:40px auto;background:#FFFDF8;border-radius:20px;padding:40px 36px;text-align:center;box-shadow:0 4px 24px rgba(44,24,16,0.10)">
+<body style="margin:0;padding:0;background:#F2F4F5;font-family:-apple-system,Arial,sans-serif">
+  <div style="max-width:480px;margin:40px auto;background:#FFFFFF;border-radius:20px;padding:40px 36px;text-align:center;box-shadow:0 4px 24px rgba(17,34,64,0.10)">
     <div style="font-size:56px;margin-bottom:12px">🔑</div>
-    <h2 style="color:#2C1810;font-size:22px;font-weight:900;margin:0 0 10px">Reset your password</h2>
-    <p style="color:#8B7355;font-size:15px;line-height:1.7;margin:0 0 28px">
+    <h2 style="color:#112240;font-size:22px;font-weight:900;margin:0 0 10px">Reset your password</h2>
+    <p style="color:#4A6878;font-size:15px;line-height:1.7;margin:0 0 28px">
       Hi <strong>${user.username}</strong>, we received a request to reset your password.<br>
       Click the button below — the link expires in <strong>1 hour</strong>.
     </p>
-    <a href="${link}" style="display:inline-block;background:#C4714A;color:white;padding:14px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:800;letter-spacing:0.2px">
+    <a href="${link}" style="display:inline-block;background:#00A887;color:white;padding:14px 36px;border-radius:12px;text-decoration:none;font-size:16px;font-weight:800;letter-spacing:0.2px">
       Reset Password →
     </a>
-    <p style="color:#B8A593;font-size:12px;margin:24px 0 0;line-height:1.6">
+    <p style="color:#8AAAB8;font-size:12px;margin:24px 0 0;line-height:1.6">
       If you didn't request this, you can safely ignore this email.
     </p>
   </div>
