@@ -1207,7 +1207,7 @@ async function loadTodayData() {
 
     updateRings(foodCal, totPro, totCarb, totFat, targets);
     renderMeals(dayLogs);
-  } catch(e) { console.error(e); }
+  } catch(e) { console.error(e); showToast('❌ Could not load meals: ' + e.message, 4000); }
 }
 
 function getTargets() {
@@ -1668,6 +1668,8 @@ async function logMeal() {
 
   const entry = {
     food:        document.getElementById('review-food-input').value || currentResult.food,
+    date:        today(),
+    time:        new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:true }),
     calories:    Math.round((currentResult.calories||0) * m),
     protein:     Math.round((currentResult.protein||0)  * m),
     carbs:       Math.round((currentResult.carbs||0)    * m),
@@ -1752,7 +1754,7 @@ async function loadHistory() {
           </div>
         </div>`;
     }).join('');
-  } catch(e) { console.error(e); }
+  } catch(e) { console.error(e); showToast('❌ Could not load data: ' + e.message, 4000); }
 }
 
 function toggleHistDay(id) {
